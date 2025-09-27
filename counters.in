@@ -1,0 +1,27 @@
+# Presets PAPI (portáveis quando mapeados pelo backend)
+PAPI_TOT_CYC        # ciclos totais
+PAPI_TOT_INS        # instrucoes executadas
+PAPI_FP_OPS         # operações de ponto-flutuante (quando disponível)
+PAPI_TOT_IIS        # instruções por ciclo alternative (if available)
+
+# Branches
+PAPI_BR_INS         # branches
+PAPI_BR_MSP         # branch mispredictions
+
+# Cache (data + total)
+PAPI_L1_DCM         # L1 data cache misses
+PAPI_L2_DCM         # L2 data cache misses
+PAPI_L3_TCM         # L3 total cache misses (may be L3_TCM / platform dependent)
+
+# Memory / TLB
+PAPI_LD_INS         # loads
+PAPI_SR_INS         # stores
+PAPI_TLB_DM         # data TLB misses
+
+# Vector / SIMD (preset optional; if not present, papito can try native event)
+PAPI_VEC_INS        # vector/SIMD instructions (if available as preset) 
+
+# Energy (requires PAPI RAPL component)
+# rapl:::PACKAGE_ENERGY:PACKAGE0   # package energy (J)
+# rapl:::DRAM_ENERGY:PACKAGE0      # DRAM energy (if available)
+
