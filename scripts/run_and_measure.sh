@@ -50,7 +50,7 @@ run_once() {
   # Snapshot frequency before run (if available)
   if [ -r "/sys/devices/system/cpu/cpu${TASK_CPU}/cpufreq/scaling_cur_freq" ]; then
     echo "scaling_cur_freq_before:" >> "${log}"
-    cat "/sys/devices/system/cpu/cpu${TASK_CPU}/cpufreq/scaling_cur_freq" >> "${log" } 2>/dev/null || true
+    cat "/sys/devices/system/cpu/cpu${TASK_CPU}/cpufreq/scaling_cur_freq" >> "${log}" 2>/dev/null || true
   fi
 
   # Run pinned to TASK_CPU, papito is expected to print counters during program execution
@@ -61,7 +61,7 @@ run_once() {
   # Snapshot frequency after run (if available)
   if [ -r "/sys/devices/system/cpu/cpu${TASK_CPU}/cpufreq/scaling_cur_freq" ]; then
     echo "scaling_cur_freq_after:" >> "${log}"
-    cat "/sys/devices/system/cpu/cpu${TASK_CPU}/cpufreq/scaling_cur_freq" >> "${log" } 2>/dev/null || true
+    cat "/sys/devices/system/cpu/cpu${TASK_CPU}/cpufreq/scaling_cur_freq" >> "${log}" 2>/dev/null || true
   fi
 
   # Extract SUMMARY line from log (the program prints SUMMARY at the end)
