@@ -12,9 +12,8 @@
 """
 plot_comparison.py
 
-Generates high-quality, readable comparative plots from benchmark results.
-- Creates a separate plot file for each key performance metric.
-- Creates a dedicated plot for IPC comparison.
+Generates robust, high-quality, readable comparative plots from benchmark results,
+including different tuning configurations and handling for missing data.
 """
 
 import argparse
@@ -52,6 +51,7 @@ def build_dataframe(results_dir: Path):
         raise FileNotFoundError(f"'{runs_csv_path}' not found. Please run experiments first.")
     
     df = pd.read_csv(runs_csv_path)
+    # This is the key fix: ensure the column is treated as numeric from the start
     df['elapsed_s'] = pd.to_numeric(df['elapsed_s'], errors='coerce')
 
     papi_data = [parse_papito_from_log(results_dir / Path(row['logfile']).name) for _, row in df.iterrows()]
@@ -73,9 +73,11 @@ def calculate_metrics(df: pd.DataFrame):
 # --- Enhanced Plotting Functions ---
 
 def plot_individual_metrics(df: pd.DataFrame, plot_dir: Path):
-    """
-    Creates a separate, large, and readable plot for each key performance metric.
-    """
+    df['display_mode'] = df.apply(
+        lambda row: f"{row['mode']} ({row['tuning']})" if pd.notna(row['tuning']) and row['tuning'] != 'NA' else row['mode'],
+        axis=1
+    )
+    
     metrics_to_plot = {
         'elapsed_s': 'Execution Time (s)',
         'PAPI_TOT_CYC': 'Total Cycles',
@@ -83,18 +85,21 @@ def plot_individual_metrics(df: pd.DataFrame, plot_dir: Path):
         'PAPI_VEC_INS': 'Vector Instructions'
     }
     
-    grouped = df.groupby(['mode', 'N', 'BS']).mean(numeric_only=True).reset_index()
+    # Group data once and for all
+    grouped = df.groupby(['display_mode', 'N', 'BS']).mean(numeric_only=True).reset_index()
 
     for metric, title in metrics_to_plot.items():
-        if metric not in df.columns or df[metric].isnull().all():
-            print(f"Metric '{metric}' not found in data. Skipping plot.")
+        # *** BUG FIX ***
+        # Check if the metric exists in the aggregated data before plotting
+        if metric not in grouped.columns or grouped[metric].isnull().all():
+            print(f"Warning: Metric '{metric}' has no valid data after aggregation. Skipping plot.")
             continue
 
         plt.figure(figsize=(14, 8))
         sns.set_theme(style="whitegrid", font_scale=1.2)
         
         ax = sns.lineplot(
-            data=grouped, x='N', y=metric, hue='mode', style='BS',
+            data=grouped, x='N', y=metric, hue='display_mode', style='BS',
             markers=True, dashes=True, legend='full',
             palette='bright', linewidth=2.5, markersize=8
         )
@@ -102,7 +107,7 @@ def plot_individual_metrics(df: pd.DataFrame, plot_dir: Path):
         ax.set_title(f'Performance Comparison: {title}', fontsize=20, weight='bold')
         ax.set_ylabel(title, fontsize=14)
         ax.set_xlabel('Matrix Size (N)', fontsize=14)
-        ax.legend(title='Algorithm | Block Size', fontsize=12)
+        ax.legend(title='Algorithm (Tuning) | Block Size', fontsize=12, loc='best')
         ax.set_xscale('log', base=2)
         ax.grid(True, which="both", ls="--")
 
@@ -114,18 +119,27 @@ def plot_individual_metrics(df: pd.DataFrame, plot_dir: Path):
 
 
 def plot_ipc_comparison(df: pd.DataFrame, out_path: Path):
-    """Creates a large, readable, dedicated plot for IPC comparison."""
     if 'IPC' not in df.columns or df['IPC'].isnull().all():
         print("IPC data is not available, skipping IPC plot.")
         return
 
-    grouped = df.groupby(['mode', 'N', 'BS'])['IPC'].mean().reset_index()
+    df['display_mode'] = df.apply(
+        lambda row: f"{row['mode']} ({row['tuning']})" if pd.notna(row['tuning']) and row['tuning'] != 'NA' else row['mode'],
+        axis=1
+    )
+    
+    grouped = df.groupby(['display_mode', 'N', 'BS'])['IPC'].mean().reset_index()
+    
+    # Check if there is still valid data to plot after grouping
+    if grouped.empty or grouped['IPC'].isnull().all():
+        print("Warning: No valid IPC data available to plot after aggregation.")
+        return
 
     plt.figure(figsize=(14, 8))
     sns.set_theme(style="whitegrid", font_scale=1.2)
     
     ax = sns.lineplot(
-        data=grouped, x='N', y='IPC', hue='mode', style='BS',
+        data=grouped, x='N', y='IPC', hue='display_mode', style='BS',
         markers=True, dashes=True, legend='full',
         palette='bright', linewidth=2.5, markersize=8
     )
@@ -133,7 +147,7 @@ def plot_ipc_comparison(df: pd.DataFrame, out_path: Path):
     ax.set_title('Instructions Per Cycle (IPC) Comparison', fontsize=20, weight='bold')
     ax.set_ylabel('IPC', fontsize=14)
     ax.set_xlabel('Matrix Size (N)', fontsize=14)
-    ax.legend(title='Algorithm | Block Size', fontsize=12)
+    ax.legend(title='Algorithm (Tuning) | Block Size', fontsize=12, loc='best')
     ax.set_xscale('log', base=2)
     ax.grid(True, which="both", ls="--")
 
@@ -160,10 +174,7 @@ def main():
         plot_dir = args.results_dir / "plots"
         plot_dir.mkdir(exist_ok=True)
         
-        # Generate a separate file for each performance metric
         plot_individual_metrics(df_analyzed, plot_dir)
-        
-        # Generate the dedicated IPC plot
         plot_ipc_comparison(df_analyzed, plot_dir / "comparison_ipc.png")
 
         print("\nPlotting complete! 🎨 Check the 'results/plots/' directory for your graphs.")

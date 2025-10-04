@@ -2,9 +2,11 @@
 CXX := g++
 CXXFLAGS := -O3 -march=native -fno-tree-vectorize -std=c++17
 LDFLAGS :=
+PAPI_INC ?= /opt/papi/include/
+PAPI_LIB ?= /opt/papi/lib
 INC_DIR = include
-INCLUDES := -I. -Isrc -I$(INC_DIR)
-LIBS := -lpapi
+INCLUDES := -I. -Isrc -I$(INC_DIR) -I$(PAPI_INC)
+LIBS := -L$(PAPI_LIB) -lpapi
 
 BUILD_DIR := build
 SRC_DIR := src
@@ -20,17 +22,23 @@ INTERLEAVED_DEFINES := -DINTERLEAVED_AVX_OPS=$(INTERLEAVED_AVX_OPS) -DINTERLEAVE
 
 SRC := $(wildcard $(SRC_DIR)/*.cpp)
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SRC))
+# Define assembly file targets
+ASM_FILES := $(patsubst $(SRC_DIR)/kernel_%.cpp,$(BUILD_DIR)/kernel_%.s,$(wildcard $(SRC_DIR)/kernel_*.cpp))
 
 TARGET := $(BIN_DIR)/matmul_mixed
 
-.PHONY: all clean dirs lint
+.PHONY: all clean dirs lint assembly clean_results
 
-all: dirs $(TARGET) $(BIN_DIR)/heater_avx
+all: dirs $(TARGET) $(BIN_DIR)/heater_avx assembly
 
 # New rule to generate compile_commands.json
 lint:
 	@echo "[LINT] Generating compile_commands.json with bear..."
 	bear -- make all
+
+# New rule to generate assembly for all kernels
+assembly: dirs $(ASM_FILES)
+	@echo "[ASM] Assembly files generated in $(BUILD_DIR)/"
 
 dirs:
 	mkdir -p $(BUILD_DIR) $(BIN_DIR) results scripts
@@ -41,7 +49,24 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@echo "[CXX] $< -> $@"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
-# Update rules for the renamed kernel files
+# --- Assembly Generation Rules ---
+$(BUILD_DIR)/kernel_avx.s: $(SRC_DIR)/kernel_avx.cpp
+	@echo "[ASM] $< -> $@"
+	$(CXX) -O3 -mavx512f -march=native $(INCLUDES) -g -fverbose-asm -S $< -o $@
+
+$(BUILD_DIR)/kernel_hybrid.s: $(SRC_DIR)/kernel_hybrid.cpp
+	@echo "[ASM] $< -> $@"
+	$(CXX) -O3 -mavx512f -march=native $(HYBRID_DEFINES) $(INCLUDES) -g -fverbose-asm -S $< -o $@
+
+$(BUILD_DIR)/kernel_interleaved.s: $(SRC_DIR)/kernel_interleaved.cpp
+	@echo "[ASM] $< -> $@"
+	$(CXX) -O3 -mavx512f -march=native $(INTERLEAVED_DEFINES) $(INCLUDES) -g -fverbose-asm -S $< -o $@
+
+$(BUILD_DIR)/kernel_scalar.s: $(SRC_DIR)/kernel_scalar.cpp
+	@echo "[ASM] $< -> $@"
+	$(CXX) -O3 -mno-avx512f -fno-tree-vectorize $(INCLUDES) -g -fverbose-asm -S $< -o $@
+
+# --- Object File Compilation Rules ---
 $(BUILD_DIR)/kernel_avx.o: $(SRC_DIR)/kernel_avx.cpp
 	@echo "[CXX,avx512] $< -> $@"
 	$(CXX) -O3 -mavx512f -march=native $(INCLUDES) -c $< -o $@
@@ -77,10 +102,11 @@ $(BIN_DIR)/heater_avx: $(BUILD_DIR)/heater_avx.o
 
 # Link target
 $(TARGET): $(OBJS)
-	@echo $(OBJS)
-	@echo $(SRC)
 	@echo "[LD] $@"
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
 
 clean:
-	rm -rf $(BUILD_DIR)/* $(BIN_DIR)/* results/*
+	rm -rf $(BUILD_DIR)/* $(BIN_DIR)/* 
+
+clean_results:
+	rm -rf results/*
