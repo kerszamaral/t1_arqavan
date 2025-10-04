@@ -1,15 +1,23 @@
 #include <cstddef>
 
-extern "C" void matmul_block_scalar(const double *A, const double *B, double *C,
-                         int N, int i0, int j0, int k0, int bs)
+extern "C" void matmul_block_scalar(const double *packA, const double *packB, double *C,
+                                    int N, int i0, int j0, int k0, int bs)
 {
-    for (int i = i0; i < i0 + bs; ++i) {
-        for (int j = j0; j < j0 + bs; ++j) {
+    // packA layout: packA[ii*bs + kk]
+    // packB layout: packB[kk*bs + jj]
+    for (int ii = 0; ii < bs; ++ii) {
+        int i = i0 + ii;
+        for (int jj = 0; jj < bs; ++jj) {
+            int j = j0 + jj;
+            // single accumulator -> dependent chain
             double sum = C[i * N + j];
-            for (int k = k0; k < k0 + bs; ++k) {
-                sum += A[i * N + k] * B[k * N + j];
+            for (int kk = 0; kk < bs; ++kk) {
+                double a = packA[ii * bs + kk];
+                double b = packB[kk * bs + jj];
+                sum = sum + a * b;
             }
             C[i * N + j] = sum;
         }
     }
 }
+
