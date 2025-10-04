@@ -3,7 +3,9 @@ bin/
 results/
 *.o
 *.log
+.cache/
 
 *.swp
 .vscode
 .idea
+compile_commands.json

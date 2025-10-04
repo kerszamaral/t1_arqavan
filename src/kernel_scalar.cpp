@@ -1,6 +1,6 @@
 #include <cstddef>
 
-extern "C" void matmul_block_scalar(const double *packA, const double *packB, double *C,
+extern "C" void kernel_scalar(const double *packA, const double *packB, double *C,
                                     int N, int i0, int j0, int k0, int bs)
 {
     // packA layout: packA[ii*bs + kk]
