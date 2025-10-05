@@ -279,14 +279,14 @@ void papito_end() {
         }
     }
 
-    // Print header (tab-separated)
-    std::cout << "PAPITO_COUNTERS";
-    for (const auto& name : event_names) std::cout << "\t" << name;
-    std::cout << std::endl;
+    // *** FIX: Print to stderr to avoid interfering with stdout data ***
+    std::cerr << "PAPITO_COUNTERS";
+    for (const auto& name : event_names) std::cerr << "\t" << name;
+    std::cerr << std::endl;
 
-    std::cout << "PAPITO_VALUES";
-    for (size_t i = 0; i < values.size(); ++i) std::cout << "\t" << values[i];
-    std::cout << std::endl;
+    std::cerr << "PAPITO_VALUES";
+    for (size_t i = 0; i < values.size(); ++i) std::cerr << "\t" << values[i];
+    std::cerr << std::endl;
 
     papito_running = false;
 }
@@ -302,4 +302,3 @@ void papito_finalize() {
     papito_inited = false;
     info_msg("papito finalized.");
 }
-

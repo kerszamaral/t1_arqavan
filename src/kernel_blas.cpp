@@ -9,19 +9,14 @@ extern "C" {
 }
 
 // Our C++ wrapper that calls the BLAS dgemm function.
-// Note: This kernel ignores the packed layout and operates directly on the original matrices.
-extern "C" void kernel_blas(const double *A, const double *B, double *C,
-                            int N, int i0, int j0, int k0, int bs) {
-    // BLAS expects column-major layout, but C/C++ uses row-major.
-    // To multiply A * B, we can ask BLAS to compute B^T * A^T, which results in (A*B)^T.
-    // Since our matrices are row-major, this effectively gives us the correct C = A*B.
-    char transa = 'N'; // No transpose for A (becomes B^T)
-    char transb = 'N'; // No transpose for B (becomes A^T)
-    
+extern "C" void kernel_blas(const double *packA, const double *packB, double *C,
+                                    int N, int i0, int j0, int k0, int bs) {
+    char trans = 'N';
     double alpha = 1.0;
-    double beta = 1.0; // Add to existing values in C
+    double beta = 1.0; // Accumulate onto existing C values
 
-    // Note: In this context, M, N, and K all correspond to the block size (BS)
-    // because we are calling this for each block.
-    dgemm_(&transa, &transb, &bs, &bs, &bs, &alpha, B, &N, A, &N, &beta, C, &N);
+    // We are multiplying two bs x bs packed matrices.
+    // The leading dimension (LDA/LDB) of the packed blocks is 'bs'.
+    // The result is written into a sub-block of C, which has a leading dimension of 'N'.
+    dgemm_(&trans, &trans, &bs, &bs, &bs, &alpha, packB, &bs, packA, &bs, &beta, &C[i0 * N + j0], &N);
 }

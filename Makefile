@@ -70,6 +70,13 @@ $(BUILD_DIR)/kernel_blas.s: $(SRC_DIR)/kernel_blas.cpp
 	@echo "[CXX,blas] $< -> $@"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -g -fverbose-asm -S $< -o $@
 
+$(BUILD_DIR)/%.s: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	@echo "[CXX] $< -> $@"
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -g -fverbose-asm -S $< -o $@
+
+
+
 # --- Object File Compilation Rules ---
 $(BUILD_DIR)/kernel_avx.o: $(SRC_DIR)/kernel_avx.cpp
 	@echo "[CXX,avx512] $< -> $@"
@@ -88,6 +95,10 @@ $(BUILD_DIR)/kernel_scalar.o: $(SRC_DIR)/kernel_scalar.cpp
 	$(CXX) -O3 -mno-avx512f -fno-tree-vectorize $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/kernel_blas.o: $(SRC_DIR)/kernel_blas.cpp
+	@echo "[CXX,blas] $< -> $@"
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/kernel_blas_whole.o: $(SRC_DIR)/kernel_blas_whole.cpp
 	@echo "[CXX,blas] $< -> $@"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
