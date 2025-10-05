@@ -12,8 +12,8 @@
 """
 plot_comparison.py
 
-Generates robust, high-quality, readable comparative plots from benchmark results,
-including different tuning configurations and handling for missing data.
+Generates high-quality, readable comparative plots from benchmark results.
+Includes a '--filter' argument to select specific modes for plotting.
 """
 
 import argparse
@@ -25,19 +25,20 @@ import seaborn as sns
 from pathlib import Path
 
 # --- Data Parsing Logic ---
-PAPITO_COUNTERS_RE = re.compile(r'^PAPITO_COUNTERS\s*(.*)$')
-PAPITO_VALUES_RE = re.compile(r'^PAPITO_VALUES\s*(.*)$')
+PAPITO_COUNTERS_RE = re.compile(r"^PAPITO_COUNTERS\s*(.*)$")
+PAPITO_VALUES_RE = re.compile(r"^PAPITO_VALUES\s*(.*)$")
+
 
 def parse_papito_from_log(logpath: Path):
     counters, values = None, None
     try:
-        with logpath.open('r', errors='ignore') as f:
+        with logpath.open("r", errors="ignore") as f:
             for line in f:
                 if m := PAPITO_COUNTERS_RE.match(line):
-                    counters = re.split(r'\s+', m.group(1).strip())
+                    counters = re.split(r"\s+", m.group(1).strip())
                 elif m := PAPITO_VALUES_RE.match(line):
-                    raw_values = re.split(r'\s+', m.group(1).strip())
-                    values = [pd.to_numeric(v, errors='coerce') for v in raw_values]
+                    raw_values = re.split(r"\s+", m.group(1).strip())
+                    values = [pd.to_numeric(v, errors="coerce") for v in raw_values]
     except FileNotFoundError:
         return None
 
@@ -45,70 +46,95 @@ def parse_papito_from_log(logpath: Path):
         return dict(zip(counters, values))
     return None
 
+
 def build_dataframe(results_dir: Path):
     runs_csv_path = results_dir / "runs.csv"
     if not runs_csv_path.exists():
-        raise FileNotFoundError(f"'{runs_csv_path}' not found. Please run experiments first.")
-    
-    df = pd.read_csv(runs_csv_path)
-    # This is the key fix: ensure the column is treated as numeric from the start
-    df['elapsed_s'] = pd.to_numeric(df['elapsed_s'], errors='coerce')
+        raise FileNotFoundError(
+            f"'{runs_csv_path}' not found. Please run experiments first."
+        )
 
-    papi_data = [parse_papito_from_log(results_dir / Path(row['logfile']).name) for _, row in df.iterrows()]
+    df = pd.read_csv(runs_csv_path)
+    df["elapsed_s"] = pd.to_numeric(df["elapsed_s"], errors="coerce")
+
+    papi_data = [
+        parse_papito_from_log(results_dir / Path(row["logfile"]).name)
+        for _, row in df.iterrows()
+    ]
     papi_df = pd.DataFrame([d if d else {} for d in papi_data], index=df.index)
-    
+
     return pd.concat([df, papi_df], axis=1)
+
 
 def calculate_metrics(df: pd.DataFrame):
     df_calc = df.copy()
-    if 'PAPI_TOT_INS' in df_calc.columns and 'PAPI_TOT_CYC' in df_calc.columns:
-        tot_ins = pd.to_numeric(df_calc['PAPI_TOT_INS'], errors='coerce')
-        tot_cyc = pd.to_numeric(df_calc['PAPI_TOT_CYC'], errors='coerce')
-        df_calc['IPC'] = tot_ins.div(tot_cyc).fillna(0).replace([np.inf, -np.inf], 0)
+    if "PAPI_TOT_INS" in df_calc.columns and "PAPI_TOT_CYC" in df_calc.columns:
+        tot_ins = pd.to_numeric(df_calc["PAPI_TOT_INS"], errors="coerce")
+        tot_cyc = pd.to_numeric(df_calc["PAPI_TOT_CYC"], errors="coerce")
+        df_calc["IPC"] = tot_ins.div(tot_cyc).fillna(0).replace([np.inf, -np.inf], 0)
     else:
-        print("Warning: 'PAPI_TOT_INS' or 'PAPI_TOT_CYC' not found. Cannot calculate IPC.")
-        df_calc['IPC'] = np.nan
+        print(
+            "Warning: 'PAPI_TOT_INS' or 'PAPI_TOT_CYC' not found. Cannot calculate IPC."
+        )
+        df_calc["IPC"] = np.nan
     return df_calc
+
 
 # --- Enhanced Plotting Functions ---
 
+
 def plot_individual_metrics(df: pd.DataFrame, plot_dir: Path):
-    df['display_mode'] = df.apply(
-        lambda row: f"{row['mode']} ({row['tuning']})" if pd.notna(row['tuning']) and row['tuning'] != 'NA' else row['mode'],
-        axis=1
+    if df.empty:
+        print("No data to plot after filtering.")
+        return
+
+    df["display_mode"] = df.apply(
+        lambda row: f"{row['mode']} ({row['tuning']})"
+        if pd.notna(row["tuning"]) and row["tuning"] != "NA"
+        else row["mode"],
+        axis=1,
     )
-    
+
     metrics_to_plot = {
-        'elapsed_s': 'Execution Time (s)',
-        'PAPI_TOT_CYC': 'Total Cycles',
-        'PAPI_FP_OPS': 'Floating Point Operations',
-        'PAPI_VEC_INS': 'Vector Instructions'
+        "elapsed_s": "Execution Time (s)",
+        "PAPI_TOT_CYC": "Total Cycles",
+        "PAPI_FP_OPS": "Floating Point Operations",
+        "PAPI_VEC_INS": "Vector Instructions",
     }
-    
-    # Group data once and for all
-    grouped = df.groupby(['display_mode', 'N', 'BS']).mean(numeric_only=True).reset_index()
+
+    grouped = (
+        df.groupby(["display_mode", "N", "BS"]).mean(numeric_only=True).reset_index()
+    )
 
     for metric, title in metrics_to_plot.items():
-        # *** BUG FIX ***
-        # Check if the metric exists in the aggregated data before plotting
         if metric not in grouped.columns or grouped[metric].isnull().all():
-            print(f"Warning: Metric '{metric}' has no valid data after aggregation. Skipping plot.")
+            print(
+                f"Warning: Metric '{metric}' has no valid data after aggregation. Skipping plot."
+            )
             continue
 
         plt.figure(figsize=(14, 8))
         sns.set_theme(style="whitegrid", font_scale=1.2)
-        
+
         ax = sns.lineplot(
-            data=grouped, x='N', y=metric, hue='display_mode', style='BS',
-            markers=True, dashes=True, legend='full',
-            palette='bright', linewidth=2.5, markersize=8
+            data=grouped,
+            x="N",
+            y=metric,
+            hue="display_mode",
+            style="BS",
+            markers=True,
+            dashes=True,
+            legend="full",
+            palette="bright",
+            linewidth=2.5,
+            markersize=8,
         )
-        
-        ax.set_title(f'Performance Comparison: {title}', fontsize=20, weight='bold')
+
+        ax.set_title(f"Performance Comparison: {title}", fontsize=20, weight="bold")
         ax.set_ylabel(title, fontsize=14)
-        ax.set_xlabel('Matrix Size (N)', fontsize=14)
-        ax.legend(title='Algorithm (Tuning) | Block Size', fontsize=12, loc='best')
-        ax.set_xscale('log', base=2)
+        ax.set_xlabel("Matrix Size (N)", fontsize=14)
+        ax.legend(title="Algorithm (Tuning) | Block Size", fontsize=12)
+        ax.set_xscale("log", base=2)
         ax.grid(True, which="both", ls="--")
 
         out_path = plot_dir / f"comparison_{metric}.png"
@@ -119,36 +145,45 @@ def plot_individual_metrics(df: pd.DataFrame, plot_dir: Path):
 
 
 def plot_ipc_comparison(df: pd.DataFrame, out_path: Path):
-    if 'IPC' not in df.columns or df['IPC'].isnull().all():
-        print("IPC data is not available, skipping IPC plot.")
+    if df.empty or "IPC" not in df.columns or df["IPC"].isnull().all():
+        print("IPC data is not available or data is empty, skipping IPC plot.")
         return
 
-    df['display_mode'] = df.apply(
-        lambda row: f"{row['mode']} ({row['tuning']})" if pd.notna(row['tuning']) and row['tuning'] != 'NA' else row['mode'],
-        axis=1
+    df["display_mode"] = df.apply(
+        lambda row: f"{row['mode']} ({row['tuning']})"
+        if pd.notna(row["tuning"]) and row["tuning"] != "NA"
+        else row["mode"],
+        axis=1,
     )
-    
-    grouped = df.groupby(['display_mode', 'N', 'BS'])['IPC'].mean().reset_index()
-    
-    # Check if there is still valid data to plot after grouping
-    if grouped.empty or grouped['IPC'].isnull().all():
+
+    grouped = df.groupby(["display_mode", "N", "BS"])["IPC"].mean().reset_index()
+
+    if grouped.empty or grouped["IPC"].isnull().all():
         print("Warning: No valid IPC data available to plot after aggregation.")
         return
 
     plt.figure(figsize=(14, 8))
     sns.set_theme(style="whitegrid", font_scale=1.2)
-    
+
     ax = sns.lineplot(
-        data=grouped, x='N', y='IPC', hue='display_mode', style='BS',
-        markers=True, dashes=True, legend='full',
-        palette='bright', linewidth=2.5, markersize=8
+        data=grouped,
+        x="N",
+        y="IPC",
+        hue="display_mode",
+        style="BS",
+        markers=True,
+        dashes=True,
+        legend="full",
+        palette="bright",
+        linewidth=2.5,
+        markersize=8,
     )
-    
-    ax.set_title('Instructions Per Cycle (IPC) Comparison', fontsize=20, weight='bold')
-    ax.set_ylabel('IPC', fontsize=14)
-    ax.set_xlabel('Matrix Size (N)', fontsize=14)
-    ax.legend(title='Algorithm (Tuning) | Block Size', fontsize=12, loc='best')
-    ax.set_xscale('log', base=2)
+
+    ax.set_title("Instructions Per Cycle (IPC) Comparison", fontsize=20, weight="bold")
+    ax.set_ylabel("IPC", fontsize=14)
+    ax.set_xlabel("Matrix Size (N)", fontsize=14)
+    ax.legend(title="Algorithm (Tuning) | Block Size", fontsize=12)
+    ax.set_xscale("log", base=2)
     ax.grid(True, which="both", ls="--")
 
     plt.tight_layout()
@@ -156,11 +191,24 @@ def plot_ipc_comparison(df: pd.DataFrame, out_path: Path):
     plt.savefig(out_path, dpi=150)
     plt.close()
 
+
 # --- Main Execution ---
 def main():
-    parser = argparse.ArgumentParser(description="Generate comparative plots from benchmark results.")
-    parser.add_argument("--results-dir", "-r", type=Path, default=Path("results"),
-                        help="Path to the results directory containing runs.csv and log files.")
+    parser = argparse.ArgumentParser(
+        description="Generate comparative plots from benchmark results."
+    )
+    parser.add_argument(
+        "--results-dir",
+        "-r",
+        type=Path,
+        default=Path("results"),
+        help="Path to the results directory containing runs.csv and log files.",
+    )
+    parser.add_argument(
+        "--filter",
+        nargs="+",
+        help="A list of modes to include in the plots (e.g., avx scalar blas_whole).",
+    )
     args = parser.parse_args()
 
     if not args.results_dir.exists():
@@ -170,19 +218,26 @@ def main():
     try:
         df = build_dataframe(args.results_dir)
         df_analyzed = calculate_metrics(df)
-        
+
+        if args.filter:
+            print(f"Filtering results to include only: {', '.join(args.filter)}")
+            df_analyzed = df_analyzed[df_analyzed["mode"].isin(args.filter)]
+
         plot_dir = args.results_dir / "plots"
         plot_dir.mkdir(exist_ok=True)
-        
+
         plot_individual_metrics(df_analyzed, plot_dir)
         plot_ipc_comparison(df_analyzed, plot_dir / "comparison_ipc.png")
 
-        print("\nPlotting complete! 🎨 Check the 'results/plots/' directory for your graphs.")
+        print(
+            "\nPlotting complete! 🎨 Check the 'results/plots/' directory for your graphs."
+        )
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+
 
 if __name__ == "__main__":
     main()
