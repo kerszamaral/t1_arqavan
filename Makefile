@@ -29,7 +29,7 @@ TARGET := $(BIN_DIR)/matmul_mixed
 
 .PHONY: all clean dirs lint assembly clean_results
 
-all: dirs $(TARGET) $(BIN_DIR)/heater_avx assembly
+all: dirs $(TARGET) assembly
 
 # New rule to generate compile_commands.json
 lint:
@@ -107,18 +107,6 @@ $(BUILD_DIR)/papito.o: $(SRC_DIR)/papito.cpp $(INC_DIR)/papito.h
 	@echo "[CXX] papito"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $(SRC_DIR)/papito.cpp -o $(BUILD_DIR)/papito.o
 
-# build heater (AVX-512)
-$(BUILD_DIR)/heater_avx.o: $(SRC_DIR)/heater_avx.c
-	@mkdir -p $(dir $@)
-	@echo "[C] heater_avx"
-	$(CXX) -O3 -mavx512f -march=native -fno-tree-vectorize -c $(SRC_DIR)/heater_avx.c -o $(BUILD_DIR)/heater_avx.o
-
-# link heater into bin/heater_avx
-$(BIN_DIR)/heater_avx: $(BUILD_DIR)/heater_avx.o
-	@mkdir -p $(BIN_DIR)
-	@echo "[LD] heater_avx"
-	$(CXX) $(CFLAGS) $(BUILD_DIR)/heater_avx.o -o $(BIN_DIR)/heater_avx
-
 # Link target
 $(TARGET): $(OBJS)
 	@echo "[LD] $@"
@@ -129,3 +117,6 @@ clean:
 
 clean_results:
 	rm -rf results/*
+
+clean_plots:
+	rm -rf results/plots/*
