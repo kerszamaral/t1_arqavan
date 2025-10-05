@@ -6,7 +6,7 @@ PAPI_INC ?= /opt/papi/include/
 PAPI_LIB ?= /opt/papi/lib
 INC_DIR = include
 INCLUDES := -I. -Isrc -I$(INC_DIR) -I$(PAPI_INC)
-LIBS := -L$(PAPI_LIB) -lpapi
+LIBS := -L$(PAPI_LIB) -lpapi -lblas
 
 BUILD_DIR := build
 SRC_DIR := src
@@ -66,6 +66,10 @@ $(BUILD_DIR)/kernel_scalar.s: $(SRC_DIR)/kernel_scalar.cpp
 	@echo "[ASM] $< -> $@"
 	$(CXX) -O3 -mno-avx512f -fno-tree-vectorize $(INCLUDES) -g -fverbose-asm -S $< -o $@
 
+$(BUILD_DIR)/kernel_blas.s: $(SRC_DIR)/kernel_blas.cpp
+	@echo "[CXX,blas] $< -> $@"
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -g -fverbose-asm -S $< -o $@
+
 # --- Object File Compilation Rules ---
 $(BUILD_DIR)/kernel_avx.o: $(SRC_DIR)/kernel_avx.cpp
 	@echo "[CXX,avx512] $< -> $@"
@@ -82,6 +86,10 @@ $(BUILD_DIR)/kernel_interleaved.o: $(SRC_DIR)/kernel_interleaved.cpp
 $(BUILD_DIR)/kernel_scalar.o: $(SRC_DIR)/kernel_scalar.cpp
 	@echo "[CXX,scalar] $< -> $@"
 	$(CXX) -O3 -mno-avx512f -fno-tree-vectorize $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/kernel_blas.o: $(SRC_DIR)/kernel_blas.cpp
+	@echo "[CXX,blas] $< -> $@"
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 # special: make sure papito is compiled normally (if present)
 $(BUILD_DIR)/papito.o: $(SRC_DIR)/papito.cpp $(INC_DIR)/papito.h

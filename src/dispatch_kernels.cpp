@@ -9,7 +9,8 @@ matmul_func_t get_kernel_for_mode(const std::string& mode) {
         {"avx", kernel_avx},
         {"scalar", kernel_scalar},
         {"hybrid", kernel_hybrid},
-        {"interleaved", kernel_interleaved}
+        {"interleaved", kernel_interleaved},
+        {"blas", kernel_blas}
     };
 
     auto it = kernel_map.find(mode);
