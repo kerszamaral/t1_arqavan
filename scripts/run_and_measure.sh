@@ -87,7 +87,7 @@ for N in "${N_VALUES[@]}"; do
         BENCH_CMD="taskset -c ${TASK_CPU} ${BIN} ${N} ${BS} ${mode} $((RANDOM & 0x7fffffff))"
         EXEC_CMD="${BENCH_CMD}"
         if [ "$USE_PERF" -eq 1 ]; then
-            PERF_EVENTS="power/energy-pkg/,cpu-cycles"
+            PERF_EVENTS="power/energy-pkg/"
             EXEC_CMD="perf stat -e ${PERF_EVENTS} -o ${perf_logfile} -- ${BENCH_CMD}"
         fi
 
@@ -140,7 +140,7 @@ for N in "${N_VALUES[@]}"; do
           BENCH_CMD="taskset -c ${TASK_CPU} ${BIN} ${N} ${BS} ${mode} $((RANDOM & 0x7fffffff))"
           EXEC_CMD="${BENCH_CMD}"
           if [ "$USE_PERF" -eq 1 ]; then
-              PERF_EVENTS="power/energy-pkg/,cpu-cycles"
+              PERF_EVENTS="power/energy-pkg/"
               EXEC_CMD="perf stat -e ${PERF_EVENTS} -o ${perf_logfile} -- ${BENCH_CMD}"
           fi
 
