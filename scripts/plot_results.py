@@ -134,6 +134,7 @@ def plot_by_bs_and_metric(df: pd.DataFrame, plot_dir: Path):
         return
 
     metrics_to_plot = {
+        "elapsed_s": "Tempo de Execução (s)",
         "IPC": "Instruções por Ciclo (IPC)",
         "PAPI_TOT_CYC": "Total de Ciclos",
         "energy_J": "Consumo de Energia (Joules)",
