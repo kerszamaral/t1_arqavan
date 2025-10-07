@@ -208,6 +208,72 @@ def plot_by_bs_and_metric(df: pd.DataFrame, plot_dir: Path):
             plt.savefig(out_path, dpi=150)
             plt.close()
 
+def plot_best_vs_whole(df: pd.DataFrame, plot_dir: Path):
+    """
+    Compara as estratégias 'whole' contra a melhor e a pior estratégia em blocos.
+    """
+    whole_modes_df = df[df['mode_orig'].str.contains('_whole', na=False)]
+    block_modes_df = df[~df['mode_orig'].str.contains('_whole', na=False)]
+
+    if block_modes_df.empty:
+        print("Nenhum modo em blocos encontrado para a comparação 'melhor/pior vs. whole'.")
+        return
+
+    # --- MUDANÇA: Encontra o melhor E o pior caso ---
+    best_block_idx = block_modes_df.groupby('N')['elapsed_s'].idxmin()
+    worst_block_idx = block_modes_df.groupby('N')['elapsed_s'].idxmax()
+
+    best_block_runs = block_modes_df.loc[best_block_idx].copy()
+    worst_block_runs = block_modes_df.loc[worst_block_idx].copy()
+    
+    best_block_runs['display_mode'] = 'Melhor Estratégia em Bloco'
+    worst_block_runs['display_mode'] = 'Pior Estratégia em Bloco'
+
+    # Combina todos os dados para o gráfico
+    comparison_df = pd.concat([whole_modes_df, best_block_runs, worst_block_runs], ignore_index=True)
+
+    metrics_to_plot = {
+        "IPC": "Instruções por Ciclo (IPC)",
+        "PAPI_TOT_CYC": "Total de Ciclos",
+        "energy_J": "Consumo de Energia (Joules)",
+    }
+
+    for metric, title in metrics_to_plot.items():
+        if metric not in comparison_df.columns or comparison_df[metric].isnull().all():
+            continue
+        
+        grouped = comparison_df.groupby(["display_mode", "N"]).mean(numeric_only=True).reset_index()
+
+        plt.figure(figsize=(14, 8))
+        sns.set_theme(style="whitegrid", font_scale=1.2)
+
+        ax = sns.lineplot(
+            data=grouped,
+            x="N",
+            y=metric,
+            hue="display_mode",
+            style="display_mode",
+            markers=True,
+            dashes=False,
+            legend="full",
+            palette="viridis",
+            linewidth=2.5,
+            markersize=8,
+        )
+
+        ax.set_title(f"Melhor/Pior em Bloco vs. Matriz Inteira: {title}", fontsize=20, weight="bold")
+        ax.set_ylabel(title, fontsize=14)
+        ax.set_xlabel("Tamanho da Matriz (N)", fontsize=14)
+        ax.legend(title="Estratégia", fontsize=12)
+        ax.set_xscale("log", base=2)
+        ax.grid(True, which="both", ls="--")
+
+        out_path = plot_dir / f"best_vs_whole_{metric}.png"
+        plt.tight_layout()
+        print(f"Salvando gráfico de comparação em {out_path}")
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+
 # --- Execução Principal ---
 def main():
     parser = argparse.ArgumentParser(
@@ -287,6 +353,7 @@ def main():
         plot_dir.mkdir(exist_ok=True, parents=True)
         
         plot_by_bs_and_metric(df_analyzed, plot_dir)
+        plot_best_vs_whole(df_analyzed, plot_dir)
 
         print(
             f"\nPlotagem completa! 🎨 Seus novos gráficos estão no diretório '{plot_dir}'."
