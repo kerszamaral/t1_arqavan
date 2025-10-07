@@ -2,6 +2,7 @@ build/
 bin/
 results/
 results.zip
+results_*.zip
 *.o
 *.log
 .cache/

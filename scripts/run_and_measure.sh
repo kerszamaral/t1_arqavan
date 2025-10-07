@@ -3,6 +3,7 @@ set -euo pipefail
 
 # scripts/run_and_measure.sh
 # Optimized to run _whole modes only once per matrix size.
+export OPENBLAS_NUM_THREADS=1
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${ROOT}/bin/matmul_mixed"
@@ -14,25 +15,23 @@ WHOLE_MODES=(scalar_whole blas_whole)
 BLOCK_MODES=(avx scalar hybrid interleaved blas)
 
 # --- Configuration ---
-REPEATS=3 # Keep repeats low for a broad test, can be increased later
+REPEATS=15 # Keep repeats low for a broad test, can be increased later
 
 # --- Matrix Sizes (N_VALUES) ---
 # A wide range from small (L2 cache) to very large (memory-bound).
 # Includes powers of two and a non-power-of-two size.
-N_VALUES=(512 1024 2048 3072 4096 8192)
+N_VALUES=(512 1024 2048 4096)
 
 # --- Block Sizes (BLOCKS) ---
 # A variety of block sizes to test cache blocking effectiveness.
 # Small sizes test loop overhead, large sizes test cache capacity.
-BLOCKS=(64 128 256 512)
+BLOCKS=(64)
 
 # --- Define Tuning Configurations ---
 
 # --- HYBRID_TUNINGS: Sequential AVX block, then sequential scalar block ---
 # Goal: Test the impact of switching between sustained periods of vector and scalar work.
 HYBRID_TUNINGS=(
-    "1_0"    # Purely Vector: Baseline for the hybrid structure.
-    "0_8"    # Purely Scalar: How does it compare to the dedicated scalar kernel?
     "1_8"    # Balanced Workload: 1 AVX op (8 columns) and 8 scalar ops (8 columns).
     "2_4"    # Vector Heavy: 2 AVX ops (16 cols) for every 4 scalar ops.
     "1_16"   # Scalar Heavy: Good for testing latency hiding.
