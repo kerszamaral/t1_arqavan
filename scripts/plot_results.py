@@ -12,9 +12,9 @@
 """
 plot_results.py
 
-A unified script to generate high-quality, readable comparative plots from benchmark results.
-It creates separate, well-organized plots for each metric and block size to ensure clarity
-and provides a '--filter' argument to select specific modes for plotting.
+Um script unificado para gerar gráficos comparativos de alta qualidade a partir de resultados de benchmark.
+Ele cria gráficos separados e bem organizados para cada métrica e tamanho de bloco para garantir clareza,
+oferece argumentos de linha de comando para filtrar, renomear e adicionar uma linha de base.
 """
 
 import argparse
@@ -25,12 +25,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 
-# --- Data Parsing Logic ---
+# --- Lógica de Extração de Dados ---
 PAPITO_COUNTERS_RE = re.compile(r"^PAPITO_COUNTERS\s*(.*)$")
 PAPITO_VALUES_RE = re.compile(r"^PAPITO_VALUES\s*(.*)$")
 
 def parse_papito_from_log(logpath: Path):
-    """Parses a log file to extract PAPI counters and values."""
+    """Extrai os contadores e valores do PAPI de um arquivo de log."""
     counters, values = None, None
     try:
         with logpath.open("r", errors="ignore") as f:
@@ -41,7 +41,7 @@ def parse_papito_from_log(logpath: Path):
                     raw_values = re.split(r"\s+", m.group(1).strip())
                     values = [pd.to_numeric(v, errors="coerce") for v in raw_values]
     except FileNotFoundError:
-        print(f"Warning: Log file not found at {logpath}")
+        print(f"Aviso: Arquivo de log não encontrado em {logpath}")
         return None
 
     if counters and values and len(counters) == len(values):
@@ -50,17 +50,16 @@ def parse_papito_from_log(logpath: Path):
 
 
 def build_dataframe(results_dir: Path):
-    """Builds a pandas DataFrame from runs.csv and associated log files."""
+    """Constrói um DataFrame do pandas a partir do runs.csv e arquivos de log associados."""
     runs_csv_path = results_dir / "runs.csv"
     if not runs_csv_path.exists():
         raise FileNotFoundError(
-            f"'{runs_csv_path}' not found. Please run experiments first using run_and_measure.sh."
+            f"'{runs_csv_path}' não encontrado. Por favor, execute os experimentos primeiro."
         )
 
     df = pd.read_csv(runs_csv_path)
     df["elapsed_s"] = pd.to_numeric(df["elapsed_s"], errors="coerce")
 
-    # Parse PAPI data from each log file
     papi_data = [
         parse_papito_from_log(results_dir / Path(row["logfile"]).name)
         for _, row in df.iterrows()
@@ -70,11 +69,20 @@ def build_dataframe(results_dir: Path):
     return pd.concat([df, papi_df], axis=1)
 
 
-def calculate_metrics(df: pd.DataFrame):
-    """Calculates derived metrics like IPC, L3 Miss Rate, and Branch Mispredict Rate."""
+def calculate_metrics(df: pd.DataFrame, rename_map: dict):
+    """Calcula métricas derivadas como IPC, Taxas de Acerto de Cache e percentuais de instruções."""
     df_calc = df.copy()
 
-    # Calculate IPC
+    if rename_map:
+        df_calc['mode'] = df_calc['mode'].replace(rename_map)
+
+    df_calc["display_mode"] = df_calc.apply(
+        lambda row: f"{row['mode']} ({row['tuning']})"
+        if pd.notna(row["tuning"]) and row["tuning"] != "NA"
+        else row["mode"],
+        axis=1,
+    )
+
     if "PAPI_TOT_INS" in df_calc.columns and "PAPI_TOT_CYC" in df_calc.columns:
         tot_ins = pd.to_numeric(df_calc["PAPI_TOT_INS"], errors="coerce")
         tot_cyc = pd.to_numeric(df_calc["PAPI_TOT_CYC"], errors="coerce")
@@ -82,143 +90,212 @@ def calculate_metrics(df: pd.DataFrame):
     else:
         df_calc["IPC"] = np.nan
 
-    # Calculate L3 Miss Rate
-    if 'PAPI_L3_TCM' in df.columns and 'PAPI_LD_INS' in df.columns and df['PAPI_LD_INS'].sum() > 0:
-        df_calc['L3_MISS_RATE'] = df['PAPI_L3_TCM'] / df['PAPI_LD_INS']
+    if 'PAPI_L1_DCA' in df.columns and 'PAPI_L1_DCM' in df.columns:
+        l1_accesses = pd.to_numeric(df_calc['PAPI_L1_DCA'], errors='coerce')
+        l1_misses = pd.to_numeric(df_calc['PAPI_L1_DCM'], errors='coerce')
+        l1_hits = l1_accesses - l1_misses
+        df_calc['L1_HIT_RATE'] = np.where(l1_accesses == 0, 1.0, l1_hits / l1_accesses) * 100
     else:
-        df_calc['L3_MISS_RATE'] = np.nan
-        
-    # Calculate Branch Misprediction Rate
-    if 'PAPI_BR_MSP' in df.columns and 'PAPI_BR_INS' in df.columns and df['PAPI_BR_INS'].sum() > 0:
-        df_calc['BR_MISP_RATE'] = df['PAPI_BR_MSP'] / df['PAPI_BR_INS']
-    else:
-        df_calc['BR_MISP_RATE'] = np.nan
+        df_calc['L1_HIT_RATE'] = np.nan
 
-    # Create a display label for modes with tunings
-    df_calc["display_mode"] = df_calc.apply(
-        lambda row: f"{row['mode']} ({row['tuning']})"
-        if pd.notna(row["tuning"]) and row["tuning"] != "NA"
-        else row["mode"],
-        axis=1,
-    )
+    if 'PAPI_L2_DCH' in df.columns and 'PAPI_L2_DCM' in df.columns:
+        l2_hits = pd.to_numeric(df_calc['PAPI_L2_DCH'], errors='coerce')
+        l2_misses = pd.to_numeric(df_calc['PAPI_L2_DCM'], errors='coerce')
+        l2_accesses = l2_hits + l2_misses
+        df_calc['L2_HIT_RATE'] = np.where(l2_accesses == 0, 1.0, l2_hits / l2_accesses) * 100
+    else:
+        df_calc['L2_HIT_RATE'] = np.nan
+        
+    if 'PAPI_VEC_INS' in df.columns and 'PAPI_TOT_INS' in df.columns:
+        vec_ins = pd.to_numeric(df_calc['PAPI_VEC_INS'], errors='coerce')
+        tot_ins = pd.to_numeric(df_calc['PAPI_TOT_INS'], errors='coerce')
+        df_calc['VEC_INS_PERCENT'] = vec_ins.div(tot_ins).fillna(0).replace([np.inf, -np.inf], 0) * 100
+    else:
+        df_calc['VEC_INS_PERCENT'] = np.nan
+
+    if 'PAPI_FP_INS' in df.columns and 'PAPI_VEC_INS' in df.columns:
+        fp_ins = pd.to_numeric(df_calc['PAPI_FP_INS'], errors='coerce')
+        vec_ins = pd.to_numeric(df_calc['PAPI_VEC_INS'], errors='coerce')
+        df_calc['VECTORIZED_FP_PERCENT'] = vec_ins.div(fp_ins).fillna(0).replace([np.inf, -np.inf], 0) * 100
+    else:
+        df_calc['VECTORIZED_FP_PERCENT'] = np.nan
+
     return df_calc
 
 
-# --- Enhanced Plotting Functions ---
+# --- Funções de Plotagem ---
 
 def plot_by_bs_and_metric(df: pd.DataFrame, plot_dir: Path):
     """
-    Generates a separate plot for each metric and each block size,
-    showing performance vs. matrix size (N).
+    Gera um gráfico separado para cada métrica e tamanho de bloco.
     """
     if df.empty:
-        print("No data available to plot after filtering.")
+        print("Nenhum dado disponível para plotar após a filtragem.")
         return
 
     metrics_to_plot = {
-        "elapsed_s": "Execution Time (s)",
-        "IPC": "Instructions Per Cycle (IPC)",
-        "PAPI_TOT_CYC": "Total Cycles",
-        "PAPI_FP_OPS": "Floating Point Operations",
-        "PAPI_VEC_INS": "Vector Instructions",
-        "L3_MISS_RATE": "L3 Cache Miss Rate",
-        "BR_MISP_RATE": "Branch Misprediction Rate",
+        "IPC": "Instruções por Ciclo (IPC)",
+        "PAPI_TOT_CYC": "Total de Ciclos",
+        "energy_J": "Consumo de Energia (Joules)",
+        "L1_HIT_RATE": "Taxa de Acerto do Cache L1 (%)",
+        "L2_HIT_RATE": "Taxa de Acerto do Cache L2 (%)",
+        "VEC_INS_PERCENT": "Percentual de Instruções Vetoriais (%)",
+        "VECTORIZED_FP_PERCENT": "Percentual de FP Vetorizado (%)",
     }
+    
+    baseline_df = df[df['mode_orig'] == 'blas_whole'].copy()
+    if baseline_df.empty:
+        print("Aviso: Dados 'blas_whole' não encontrados. Não será possível adicionar como linha de base.")
 
     block_sizes = sorted(df[df["BS"] > 0]["BS"].unique())
+    if not block_sizes:
+        print("Nenhum modo com blocos para plotar.")
+        return
 
     for bs in block_sizes:
         df_bs = df[df["BS"] == bs]
-        if df_bs.empty:
+        if df_bs.empty and baseline_df.empty:
             continue
+            
+        combined_df = pd.concat([df_bs, baseline_df], ignore_index=True)
 
         for metric, title in metrics_to_plot.items():
-            if metric not in df_bs.columns or df_bs[metric].isnull().all():
+            if metric not in combined_df.columns or combined_df[metric].isnull().all():
                 continue
 
-            # Aggregate data by taking the mean of repeats
             grouped = (
-                df_bs.groupby(["display_mode", "N"]).mean(numeric_only=True).reset_index()
+                combined_df.groupby(["mode", "display_mode", "N"]).mean(numeric_only=True).reset_index()
             )
 
             if grouped.empty or metric not in grouped.columns or grouped[metric].isnull().all():
                 continue
 
+            # --- MUDANÇA: Renomeia as colunas para legendas mais claras ---
+            grouped.rename(columns={
+                "mode": "Estratégia",
+                "display_mode": "Configuração"
+            }, inplace=True)
+
             plt.figure(figsize=(14, 8))
             sns.set_theme(style="whitegrid", font_scale=1.2)
+            ax = plt.gca()
 
-            ax = sns.lineplot(
+            sns.lineplot(
                 data=grouped,
                 x="N",
                 y=metric,
-                hue="display_mode",
-                style="display_mode",
+                hue="Estratégia",      # <-- Usa a coluna renomeada
+                style="Configuração",  # <-- Usa a coluna renomeada
                 markers=True,
                 dashes=False,
                 legend="full",
                 palette="bright",
                 linewidth=2.5,
-                markersize=8,
+                markersize=10,
+                ax=ax,
             )
 
-            ax.set_title(f"{title} vs. Matrix Size (N) for BS={bs}", fontsize=20, weight="bold")
+            ax.set_title(f"{title} vs. Tamanho da Matriz (N) para Bloco={bs}", fontsize=20, weight="bold")
             ax.set_ylabel(title, fontsize=14)
-            ax.set_xlabel("Matrix Size (N)", fontsize=14)
-            ax.legend(title="Algorithm (Tuning)", fontsize=12)
+            ax.set_xlabel("Tamanho da Matriz (N)", fontsize=14)
+            # A legenda agora é gerada automaticamente com os nomes corretos
             ax.set_xscale("log", base=2)
             ax.grid(True, which="both", ls="--")
 
             out_path = plot_dir / f"BS{bs}_{metric}.png"
             plt.tight_layout()
-            print(f"Saving plot to {out_path}")
+            print(f"Salvando gráfico em {out_path}")
             plt.savefig(out_path, dpi=150)
             plt.close()
 
-
-# --- Main Execution ---
+# --- Execução Principal ---
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate high-quality comparative plots from benchmark results."
+        description="Gera gráficos comparativos de alta qualidade a partir de resultados de benchmark."
     )
     parser.add_argument(
         "--results-dir",
         "-r",
         type=Path,
         default=Path("results"),
-        help="Path to the results directory with runs.csv and log files.",
+        help="Caminho para o diretório de resultados com runs.csv e arquivos de log.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        type=Path,
+        help="Caminho para o diretório de saída dos gráficos. Padrão: [results-dir]/plots.",
+    )
+    parser.add_argument(
+        "--sizes",
+        type=int,
+        nargs="+",
+        help="Uma lista de tamanhos de matriz (N) para incluir nos gráficos.",
+    )
+    parser.add_argument(
+        "--rename",
+        nargs="+",
+        help="Renomeia estratégias na legenda. Formato: 'nome_antigo:Novo Nome'",
     )
     parser.add_argument(
         "--filter",
         nargs="+",
-        help="A list of modes to include in the plots (e.g., avx scalar blas).",
+        help="Uma lista de modos para incluir nos gráficos (ex: avx scalar blas).",
+    )
+    parser.add_argument(
+        "--blacklist",
+        nargs="+",
+        help="Uma lista de modos para excluir dos gráficos.",
     )
     args = parser.parse_args()
 
     try:
         if not args.results_dir.exists():
-            print(f"Error: Results directory '{args.results_dir}' not found.")
+            print(f"Erro: Diretório de resultados '{args.results_dir}' não encontrado.")
             return
 
         df = build_dataframe(args.results_dir)
-        df_analyzed = calculate_metrics(df)
+        
+        rename_map = {}
+        if args.rename:
+            for item in args.rename:
+                if ':' not in item:
+                    print(f"Aviso: Formato inválido para --rename '{item}'. Use 'antigo:novo'.")
+                    continue
+                old, new = item.split(':', 1)
+                rename_map[old] = new.strip('"\'')
+
+        df['mode_orig'] = df['mode']
+        df_analyzed = calculate_metrics(df, rename_map)
+        
+        if args.sizes:
+            print(f"Filtrando resultados para incluir apenas os tamanhos: {', '.join(map(str, args.sizes))}")
+            df_analyzed = df_analyzed[df_analyzed["N"].isin(args.sizes)]
 
         if args.filter:
-            print(f"Filtering results to include only modes: {', '.join(args.filter)}")
-            df_analyzed = df_analyzed[df_analyzed["mode"].isin(args.filter)]
+            print(f"Filtrando resultados para incluir apenas os modos: {', '.join(args.filter)}")
+            df_analyzed = df_analyzed[df_analyzed["mode_orig"].isin(args.filter)]
+            
+        if args.blacklist:
+            print(f"Excluindo modos da lista negra: {', '.join(args.blacklist)}")
+            df_analyzed = df_analyzed[~df_analyzed["display_mode"].isin(args.blacklist)]
 
-        plot_dir = args.results_dir / "plots"
-        plot_dir.mkdir(exist_ok=True)
-
+        if args.output_dir:
+            plot_dir = args.output_dir
+        else:
+            plot_dir = args.results_dir / "plots"
+        plot_dir.mkdir(exist_ok=True, parents=True)
+        
         plot_by_bs_and_metric(df_analyzed, plot_dir)
 
         print(
-            "\nPlotting complete! 🎨 Your new, clearer graphs are in the 'results/plots/' directory."
+            f"\nPlotagem completa! 🎨 Seus novos gráficos estão no diretório '{plot_dir}'."
         )
 
     except FileNotFoundError as e:
-        print(f"Error: {e}")
+        print(f"Erro: {e}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print(f"Um erro inesperado ocorreu: {e}")
 
 
 if __name__ == "__main__":

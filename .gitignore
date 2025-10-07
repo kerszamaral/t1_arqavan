@@ -1,6 +1,7 @@
 build/
 bin/
 results/
+plots/
 results.zip
 results_*.zip
 *.o
